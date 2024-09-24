@@ -819,6 +819,49 @@ async def transitive_targets(
         if unparsed.values:
             unevaluated_transitive_excludes.append(unparsed)
 
+    # For each address, we modify the excludes to include parametrization parameters.
+    parametrized_unevaluated_transitive_excludes = []
+    for root_address, excludes in zip(request.roots, unevaluated_transitive_excludes):
+        # Check if the root address is parametrized.
+        if root_address.is_parametrized:
+            # Extract the parameters.
+            root_parameters = root_address.parameters
+
+            # Generate the addresses based on the parameters.
+            exclude_addresses = []
+            for value in excludes.values:
+                # Extract the cleaned value without parameters.
+                unparametrized_value = value.split("@")[0]
+
+                # Extract the existing parameters from the value.
+                eai_parameters = AddressInput.parse(
+                    value, description_of_origin=excludes.description_of_origin
+                ).parameters
+
+                # Join with root parameters.
+                parameters = {**root_parameters, **eai_parameters}
+
+                # Create the new address.
+                parametrized_address = Address(unparametrized_value, parameters=parameters)
+                exclude_addresses.append(parametrized_address)
+
+            # Prepare the new UnparsedAddressInputs object.
+            parametrized_excludes = UnparsedAddressInputs(
+                [a.spec for a in exclude_addresses],
+                owning_address=Address(excludes.relative_to or ""),
+                description_of_origin=excludes.description_of_origin,
+                skip_invalid_addresses=excludes.skip_invalid_addresses,
+            )
+
+            # Append the addresses to the parametrized_unevaluated_transitive_excludes.
+            parametrized_unevaluated_transitive_excludes.append(parametrized_excludes)
+
+        else:
+            parametrized_unevaluated_transitive_excludes.append(excludes)
+
+    # Replace the unevaluated_transitive_excludes with the parametrized version.
+    unevaluated_transitive_excludes = parametrized_unevaluated_transitive_excludes
+
     transitive_exclude_addresses = []
     if unevaluated_transitive_excludes:
         all_transitive_exclude_addresses = await MultiGet(
