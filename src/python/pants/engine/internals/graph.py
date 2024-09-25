@@ -850,7 +850,6 @@ async def transitive_targets(
             Get(Addresses, UnparsedAddressInputs, unparsed)
             for unparsed in unevaluated_transitive_excludes
         )
-        logger.warning("here")
         transitive_exclude_addresses = [
             *itertools.chain.from_iterable(all_transitive_exclude_addresses)
         ]
