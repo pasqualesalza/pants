@@ -817,6 +817,7 @@ async def transitive_targets(
     for t in targets:
         unparsed = t.get(Dependencies).unevaluated_transitive_excludes
         if unparsed.values:
+            logger.info(f"TRANS EXCLUDES for {t.address}: {unparsed}")
             unevaluated_transitive_excludes.append(unparsed)
 
     transitive_exclude_addresses = []
@@ -1586,16 +1587,23 @@ async def resolve_unparsed_address_inputs(
         return Addresses(valid_addresses)
 
     addresses = await MultiGet(Get(Address, AddressInput, ai) for ai in address_inputs)
+    if request.parameters:
+        addresses = tuple(addr.parametrize(dict(request.parameters)) for addr in addresses)
+    logger.info(f"ADDRESSES: {addresses}")
     # Validate that the addresses exist. We do this eagerly here because
     # `Addresses -> UnexpandedTargets` does not preserve the `description_of_origin`, so it would
     # be too late, per https://github.com/pantsbuild/pants/issues/15858.
-    await MultiGet(
-        Get(
-            WrappedTarget,
-            WrappedTargetRequest(addr, description_of_origin=request.description_of_origin),
+    try:
+        await MultiGet(
+            Get(
+                WrappedTarget,
+                WrappedTargetRequest(addr, description_of_origin=request.description_of_origin),
+            )
+            for addr in addresses
         )
-        for addr in addresses
-    )
+    except ResolveError as e:
+        logger.error(f"RESOLVE ERROR: {e}")
+        raise
     return Addresses(addresses)
 
 

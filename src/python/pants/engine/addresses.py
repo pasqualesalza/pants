@@ -15,6 +15,7 @@ from pants.build_graph.address import (  # noqa: F401: rexport.
 from pants.build_graph.address import MaybeAddress as MaybeAddress  # noqa: F401: rexport.
 from pants.build_graph.address import ResolveError
 from pants.engine.collection import Collection
+from pants.util.frozendict import FrozenDict
 from pants.util.strutil import bullet_list
 
 
@@ -62,6 +63,7 @@ class UnparsedAddressInputs:
     relative_to: str | None
     description_of_origin: str
     skip_invalid_addresses: bool
+    parameters: FrozenDict[str, str] | None
 
     def __init__(
         self,
@@ -77,3 +79,12 @@ class UnparsedAddressInputs:
         )
         object.__setattr__(self, "description_of_origin", description_of_origin)
         object.__setattr__(self, "skip_invalid_addresses", skip_invalid_addresses)
+        object.__setattr__(
+            self,
+            "parameters",
+            (
+                FrozenDict(owning_address.parameters)
+                if owning_address and owning_address.parameters
+                else None
+            ),
+        )
