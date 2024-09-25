@@ -817,7 +817,31 @@ async def transitive_targets(
     for t in targets:
         unparsed = t.get(Dependencies).unevaluated_transitive_excludes
         if unparsed.values:
-            logger.info(f"TRANS EXCLUDES for {t.address}: {unparsed}")
+            # Apply parametrization.
+            address_inputs = []
+            for v in unparsed.values:
+                address_inputs.append(
+                    AddressInput.parse(
+                        v,
+                        relative_to=unparsed.relative_to,
+                        description_of_origin=unparsed.description_of_origin,
+                    )
+                )
+            addresses = await MultiGet(  # noqa: PNT30: This is a temporary workaround.
+                Get(Address, AddressInput, ai) for ai in address_inputs
+            )
+            if unparsed.parameters:
+                addresses = tuple(addr.parametrize(dict(unparsed.parameters)) for addr in addresses)
+
+            # Rewrite the UnparsedAddressInputs.
+            unparsed = UnparsedAddressInputs(
+                [addr.spec for addr in addresses],
+                owning_address=Address(unparsed.relative_to or ""),
+                description_of_origin=unparsed.description_of_origin,
+                skip_invalid_addresses=unparsed.skip_invalid_addresses,
+            )
+
+            # Append the rewritten UnparsedAddressInputs.
             unevaluated_transitive_excludes.append(unparsed)
 
     transitive_exclude_addresses = []
@@ -826,6 +850,7 @@ async def transitive_targets(
             Get(Addresses, UnparsedAddressInputs, unparsed)
             for unparsed in unevaluated_transitive_excludes
         )
+        logger.warning("here")
         transitive_exclude_addresses = [
             *itertools.chain.from_iterable(all_transitive_exclude_addresses)
         ]
@@ -1587,23 +1612,16 @@ async def resolve_unparsed_address_inputs(
         return Addresses(valid_addresses)
 
     addresses = await MultiGet(Get(Address, AddressInput, ai) for ai in address_inputs)
-    if request.parameters:
-        addresses = tuple(addr.parametrize(dict(request.parameters)) for addr in addresses)
-    logger.info(f"ADDRESSES: {addresses}")
     # Validate that the addresses exist. We do this eagerly here because
     # `Addresses -> UnexpandedTargets` does not preserve the `description_of_origin`, so it would
     # be too late, per https://github.com/pantsbuild/pants/issues/15858.
-    try:
-        await MultiGet(
-            Get(
-                WrappedTarget,
-                WrappedTargetRequest(addr, description_of_origin=request.description_of_origin),
-            )
-            for addr in addresses
+    await MultiGet(
+        Get(
+            WrappedTarget,
+            WrappedTargetRequest(addr, description_of_origin=request.description_of_origin),
         )
-    except ResolveError as e:
-        logger.error(f"RESOLVE ERROR: {e}")
-        raise
+        for addr in addresses
+    )
     return Addresses(addresses)
 
 
